@@ -5,8 +5,8 @@ __pycache__/
 venv/
 .env
 
-# Dataset — too large for GitHub
-dataset/
+# Data — too large for GitHub
+data/
 models/*.pth
 
 # Results — commit manually
@@ -17,3 +17,7 @@ results/
 
 # Jupyter
 .ipynb_checkpoints/
+
+
+# SIDA directory, which contains the code for the SIDA method
+SIDA/

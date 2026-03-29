@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Dataset — too large for GitHub
+dataset/
+models/*.pth
+
+# Results — commit manually
+results/
+
+# Mac
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/

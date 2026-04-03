@@ -1,6 +1,6 @@
 """
 Step 3: Apply mobile transformations and measure
-watermark survival rate
+watermark survival rate — comparing dwtDct vs dwtDctSvd
 """
 import numpy as np
 from PIL import Image
@@ -11,20 +11,26 @@ import cv2
 from tqdm import tqdm
 
 # ── Config ─────────────────────────────────────────
-WATERMARKED_DIR = "data/watermarked"
-ATTACKED_DIR    = "data/attacked"
-RESULTS_DIR     = "results/tables"
-WATERMARK_MSG   = "10101010110011001111000010101010"
-WATERMARK_BITS  = 32
-METHOD          = "dwtDct"
+RESULTS_DIR   = "results/tables"
+WATERMARK_MSG = "10101010110011001111000010101010"
+WATERMARK_BITS = 32
+
+WATERMARKED_DIRS = {
+    "dwtDct":    "data/watermarked",
+    "dwtDctSvd": "data/watermarked_dwtDctSvd",
+}
+ATTACKED_DIRS = {
+    "dwtDct":    "data/attacked_dwtDct",
+    "dwtDctSvd": "data/attacked_dwtDctSvd",
+}
 
 # ── Detection ──────────────────────────────────────
-def detect_watermark(img_path):
+def detect_watermark(img_path, method):
     img_np = np.array(
         Image.open(img_path).convert("RGB")
     )
     decoder = WatermarkDecoder('bits', WATERMARK_BITS)
-    return decoder.decode(img_np, METHOD)
+    return decoder.decode(img_np, method)
 
 def bit_accuracy(detected, original=WATERMARK_MSG):
     if detected is None:
@@ -93,33 +99,40 @@ def get_out_fname(fname, t_name):
     """Get output filename — jpeg gets .jpg, rest stay .png"""
     if "jpeg" in t_name:
         return fname.replace(".png", ".jpg")
-    return fname  # always .png for everything else
+    return fname
 
-def run_all_transforms():
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+def run_transforms_for_method(method):
+    """Run all transformations for one watermarking method."""
+    watermarked_dir = WATERMARKED_DIRS[method]
+    attacked_dir    = ATTACKED_DIRS[method]
 
-    files = [f for f in os.listdir(WATERMARKED_DIR)
+    if not os.path.exists(watermarked_dir):
+        print(f"  Skipping {method} — "
+              f"{watermarked_dir} not found")
+        return None
+
+    files = [f for f in os.listdir(watermarked_dir)
              if f.endswith((".png", ".jpg"))]
 
-    print(f"Found {len(files)} watermarked images")
-    print(f"Running {len(TRANSFORMS)} transformations\n")
+    print(f"\n[{method}] {len(files)} images, "
+          f"{len(TRANSFORMS)} transformations")
 
     summary = {}
 
     for t_name, t_fn in TRANSFORMS.items():
-        out_dir = os.path.join(ATTACKED_DIR, t_name)
+        out_dir = os.path.join(attacked_dir, t_name)
         os.makedirs(out_dir, exist_ok=True)
 
         acc_list = []
 
         for fname in tqdm(files, desc=f"{t_name:12s}"):
-            in_path  = os.path.join(WATERMARKED_DIR, fname)
+            in_path  = os.path.join(watermarked_dir, fname)
             out_fname = get_out_fname(fname, t_name)
             out_path  = os.path.join(out_dir, out_fname)
 
             try:
                 t_fn(in_path, out_path)
-                detected = detect_watermark(out_path)
+                detected = detect_watermark(out_path, method)
                 acc = bit_accuracy(detected)
             except Exception as e:
                 print(f"  Error on {fname}: {e}")
@@ -130,30 +143,36 @@ def run_all_transforms():
         avg_acc = float(np.mean(acc_list))
         summary[t_name] = {
             "avg_bit_accuracy":  round(avg_acc, 4),
-            "survival_rate_pct": round(avg_acc * 100, 1)
+            "survival_rate_pct": round(avg_acc * 100, 1),
         }
-        print(f"  {t_name:12s} → "
-              f"Bit Accuracy: {avg_acc * 100:.1f}%")
 
-    # ── Save Results ───────────────────────────────
     out_file = os.path.join(
-        RESULTS_DIR, "transformation_results.json"
+        RESULTS_DIR, f"transformation_{method}.json"
     )
     with open(out_file, "w") as f:
         json.dump(summary, f, indent=2)
 
-    # ── Print Final Table ──────────────────────────
-    print("\n── Transformation Results ─────────────────")
-    print(f"{'Transform':<15} {'Bit Accuracy':>15} "
-          f"{'Survival Rate':>15}")
-    print("-" * 47)
-    for t_name, res in summary.items():
-        print(f"{t_name:<15} "
-              f"{res['avg_bit_accuracy']:>15.4f} "
-              f"{res['survival_rate_pct']:>14.1f}%")
+    return summary
 
-    print(f"\nResults saved to: {out_file}")
-    print(f"Attacked images saved to: {ATTACKED_DIR}/")
 
 if __name__ == "__main__":
-    run_all_transforms()
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+
+    all_results = {}
+    for method in ["dwtDct", "dwtDctSvd"]:
+        result = run_transforms_for_method(method)
+        if result:
+            all_results[method] = result
+
+    if len(all_results) < 2:
+        print("\nOnly one method ran — skipping comparison.")
+    else:
+        # ── Print Side-by-Side Table ───────────────
+        print("\n── Robustness Comparison ──────────────────")
+        print(f"{'Transform':<15} {'dwtDct':>10} "
+              f"{'dwtDctSvd':>12}")
+        print("-" * 40)
+        for t in TRANSFORMS:
+            d1 = all_results["dwtDct"][t]["survival_rate_pct"]
+            d2 = all_results["dwtDctSvd"][t]["survival_rate_pct"]
+            print(f"{t:<15} {d1:>9.1f}% {d2:>11.1f}%")

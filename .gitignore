@@ -21,3 +21,5 @@ results/
 
 # SIDA directory, which contains the code for the SIDA method
 SIDA/
+
+.claude/
